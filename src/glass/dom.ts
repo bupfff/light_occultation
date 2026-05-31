@@ -23,8 +23,8 @@ export interface GlassControls {
   specularAngleSlider: HTMLInputElement
   specularSaturationSlider: HTMLInputElement
   specularTypeSelect: HTMLSelectElement
-  blurTypeSelect: HTMLSelectElement
   blurAmountSlider: HTMLInputElement
+  blurOpacitySlider: HTMLInputElement
   progressiveBlurSlider: HTMLInputElement
   progressiveBlurTypeSelect: HTMLSelectElement
   chromaticAberrationCheckbox: HTMLInputElement
@@ -97,8 +97,8 @@ export function getGlassControls(): GlassControls {
     specularAngleSlider: getElement<HTMLInputElement>('specularAngle'),
     specularSaturationSlider: getElement<HTMLInputElement>('specularSaturation'),
     specularTypeSelect: getElement<HTMLSelectElement>('specularType'),
-    blurTypeSelect: getElement<HTMLSelectElement>('blurType'),
     blurAmountSlider: getElement<HTMLInputElement>('blurAmount'),
+    blurOpacitySlider: getElement<HTMLInputElement>('blurOpacity'),
     progressiveBlurSlider: getElement<HTMLInputElement>('progressiveBlur'),
     progressiveBlurTypeSelect: getElement<HTMLSelectElement>('progressiveBlurType'),
     chromaticAberrationCheckbox: getElement<HTMLInputElement>('chromaticAberration'),

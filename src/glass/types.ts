@@ -37,6 +37,7 @@ export interface GlassPreset {
   // Blur
   blurAmount: number
   blurType: number
+  blurOpacity: number
   progressiveBlur: number
   progressiveBlurType: number
 

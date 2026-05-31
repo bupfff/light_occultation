@@ -71,6 +71,11 @@ export function createBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
         visibility: GPUShaderStage.FRAGMENT,
         buffer: { type: 'read-only-storage' },
       },
+      {
+        binding: 8,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'float', viewDimension: '2d-array' },
+      },
     ],
   })
 }
@@ -85,7 +90,8 @@ export function createBindGroup(
   iconSampler: GPUSampler,
   iconLeftTexture: GPUTexture,
   iconRightTexture: GPUTexture,
-  circlePresetBuffer: GPUBuffer
+  circlePresetBuffer: GPUBuffer,
+  blurPyramidView: GPUTextureView | null = null
 ): GPUBindGroup {
   return device.createBindGroup({
     layout,
@@ -98,6 +104,17 @@ export function createBindGroup(
       { binding: 5, resource: iconLeftTexture.createView() },
       { binding: 6, resource: iconRightTexture.createView() },
       { binding: 7, resource: { buffer: circlePresetBuffer } },
+      { binding: 8, resource: blurPyramidView ?? createFallbackArrayTextureView(device) },
     ],
   })
+}
+
+// Create a 1x1 fallback texture array for when blur pyramid isn't available
+function createFallbackArrayTextureView(device: GPUDevice): GPUTextureView {
+  const texture = device.createTexture({
+    size: [1, 1, 5],
+    format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING,
+  })
+  return texture.createView({ dimension: '2d-array', arrayLayerCount: 5 })
 }

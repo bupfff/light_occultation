@@ -35,6 +35,7 @@ export interface GlassParams {
   // Blur
   blurAmount: number
   blurType: number
+  blurOpacity: number
   progressiveBlur: number
   progressiveBlurType: number
 

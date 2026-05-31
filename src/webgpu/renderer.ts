@@ -21,6 +21,7 @@ import {
   createPipeline,
 } from './shader'
 import { BackgroundTextureLoader } from './texture-loader'
+import { BlurPyramid } from './gaussian-blur'
 import type { BackgroundType, GlassParams } from './types'
 import { createGlassUniformData, GLASS_UNIFORM_BUFFER_SIZE } from './uniforms'
 
@@ -61,6 +62,10 @@ export class WebGPURenderer {
   private circlePresetStackTextures: GPUTexture[] = []
   private pendingTextureDestroys: GPUTexture[] = []
   private textureDestroyFlushScheduled = false
+
+  // Gaussian blur pyramid for true gaussian blur with progressive blur support
+  private blurPyramid: BlurPyramid | null = null
+  private blurPyramidNeedsUpdate = true
 
   public glassParams: GlassParams = createDefaultGlassParams()
 
@@ -106,6 +111,9 @@ export class WebGPURenderer {
       this.createEmptyTexture(),
       () => this.rebuildBindGroup()
     )
+
+    // Initialize blur pyramid for true Gaussian blur
+    this.blurPyramid = new BlurPyramid(this.device, 'rgba8unorm')
 
     this.bindGroup = this.createRenderBindGroup(this.bgTexture)
     this.pipeline = createPipeline(this.device, this.format, this.bindGroupLayout)
@@ -241,7 +249,7 @@ export class WebGPURenderer {
       size: [textureWidth, textureHeight],
       format: 'rgba8unorm',
       mipLevelCount: this.backgroundTextureMipLevelCount,
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
     })
 
     // Try to use copyElementImageToTexture
@@ -345,6 +353,7 @@ export class WebGPURenderer {
     this.backgroundElement = null
 
     this.bgTexture = this.textureLoader.createTextureFromCanvas(capturedCanvas)
+    this.blurPyramidNeedsUpdate = true
   }
 
   /**
@@ -371,6 +380,7 @@ export class WebGPURenderer {
     if (this.backgroundTexture) {
       this.bgTexture = this.createEmptyTexture()
       this.bindGroup = this.createRenderBindGroup(this.bgTexture)
+      this.blurPyramidNeedsUpdate = true
       this.deferTextureDestroy(this.backgroundTexture)
       this.backgroundTexture = null
     }
@@ -700,9 +710,19 @@ export class WebGPURenderer {
     if (this.backgroundElement && this.backgroundTexture && this.htmlInCanvasSupport.copyElementImageToTexture) {
       try {
         this.updateBackgroundTexture()
+        this.blurPyramidNeedsUpdate = true
       } catch {
         // Silently ignore texture update errors in render loop
       }
+    }
+
+    // Generate blur pyramid from background texture when needed (skip for empty 1x1 textures)
+    if (this.blurPyramidNeedsUpdate && this.blurPyramid && this.bgTexture &&
+        this.bgTexture.width > 1 && this.bgTexture.height > 1) {
+      const dpr = window.devicePixelRatio ?? 1
+      this.blurPyramid.generate(this.bgTexture, dpr)
+      this.bindGroup = this.createRenderBindGroup(this.bgTexture)
+      this.blurPyramidNeedsUpdate = false
     }
 
     // Sync instance data to glassParams for uniforms
@@ -908,7 +928,8 @@ export class WebGPURenderer {
       this.iconSampler,
       this.createEmptyTexture(),
       this.createEmptyTexture(),
-      this._glassInstanceManager.storageBuffer
+      this._glassInstanceManager.storageBuffer,
+      this.blurPyramid?.createView() ?? null
     )
   }
 
@@ -947,10 +968,11 @@ export class WebGPURenderer {
           size: [this.canvas.width, this.canvas.height],
           format: 'rgba8unorm',
           mipLevelCount: this.backgroundTextureMipLevelCount,
-          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
         })
         this.bgTexture = this.backgroundTexture
         this.bindGroup = this.createRenderBindGroup(this.bgTexture)
+        this.blurPyramidNeedsUpdate = true
       }
     }
   }

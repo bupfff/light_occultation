@@ -118,6 +118,7 @@ export class GlassControlPanel {
     setSliderValue(controls.magnifyingScaleSlider, instance.magnifyingScale)
     setSliderValue(controls.scaleSlider, instance.scaleRatio)
     setSliderValue(controls.blurAmountSlider, instance.blurAmount)
+    setSliderValue(controls.blurOpacitySlider, instance.blurOpacity)
     setSliderValue(controls.progressiveBlurSlider, instance.progressiveBlur)
     setSliderValue(controls.glassBgOpacitySlider, instance.glassBgOpacity)
     setSliderValue(controls.pressedGlassBgOpacitySlider, instance.pressedGlassBgOpacity)
@@ -164,7 +165,6 @@ export class GlassControlPanel {
     this.options.setCurrentSurfaceType(surfaceName)
     this.options.updateDisplacementMap()
 
-    controls.blurTypeSelect.value = String(instance.blurType)
     controls.progressiveBlurTypeSelect.value = String(instance.progressiveBlurType)
     controls.specularTypeSelect.value = String(instance.specularType)
     this.updateSpecularControls()
@@ -241,8 +241,8 @@ export class GlassControlPanel {
     setSliderValue(controls.circleSizeSlider, preset.circleSize)
     setSliderValue(controls.scaleSlider, preset.scaleRatio)
     controls.specularTypeSelect.value = String(preset.specularType)
-    controls.blurTypeSelect.value = String(preset.blurType)
     setSliderValue(controls.blurAmountSlider, preset.blurAmount)
+    setSliderValue(controls.blurOpacitySlider, preset.blurOpacity)
     setSliderValue(controls.progressiveBlurSlider, preset.progressiveBlur)
     controls.progressiveBlurTypeSelect.value = String(preset.progressiveBlurType)
     setSliderValue(controls.glassBgOpacitySlider, preset.glassBgOpacity)
@@ -483,15 +483,15 @@ export class GlassControlPanel {
       this.updateSpecularControls()
     })
 
-    controls.blurTypeSelect.addEventListener('change', () => {
-      const value = parseFloat(controls.blurTypeSelect.value)
-      renderer.glassParams.blurType = value
-      this.updateInstanceProperty(inst => inst.blurType = value)
-    })
     controls.blurAmountSlider.addEventListener('input', () => {
       const value = parseFloat(controls.blurAmountSlider.value)
       renderer.glassParams.blurAmount = value
       this.updateInstanceProperty(inst => inst.blurAmount = value)
+    })
+    controls.blurOpacitySlider.addEventListener('input', () => {
+      const value = parseFloat(controls.blurOpacitySlider.value)
+      renderer.glassParams.blurOpacity = value
+      this.updateInstanceProperty(inst => inst.blurOpacity = value)
     })
     controls.progressiveBlurSlider.addEventListener('input', () => {
       const value = parseFloat(controls.progressiveBlurSlider.value)

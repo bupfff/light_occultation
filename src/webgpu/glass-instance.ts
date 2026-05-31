@@ -26,6 +26,7 @@ export interface GlassInstanceConfig {
   // Blur
   blurAmount: number
   blurType: number
+  blurOpacity: number
   progressiveBlur: number
   progressiveBlurType: number
 
@@ -79,6 +80,7 @@ export const DEFAULT_GLASS_INSTANCE_CONFIG: GlassInstanceConfig = {
   shadowOffsetY: 8,
   blurAmount: 0,
   blurType: 0,
+  blurOpacity: 1.0,
   progressiveBlur: 0,
   progressiveBlurType: 0,
   specularOpacity: 0.8,
@@ -142,6 +144,7 @@ export abstract class GlassInstance {
   // Blur
   blurAmount: number
   blurType: number
+  blurOpacity: number
   progressiveBlur: number
   progressiveBlurType: number
 
@@ -214,6 +217,7 @@ export abstract class GlassInstance {
     this.shadowOffsetY = fullConfig.shadowOffsetY
     this.blurAmount = fullConfig.blurAmount
     this.blurType = fullConfig.blurType
+    this.blurOpacity = fullConfig.blurOpacity
     this.progressiveBlur = fullConfig.progressiveBlur
     this.progressiveBlurType = fullConfig.progressiveBlurType
     this.specularOpacity = fullConfig.specularOpacity
@@ -294,6 +298,7 @@ export abstract class GlassInstance {
     this.shadowOffsetY = other.shadowOffsetY
     this.blurAmount = other.blurAmount
     this.blurType = other.blurType
+    this.blurOpacity = other.blurOpacity
     this.progressiveBlur = other.progressiveBlur
     this.progressiveBlurType = other.progressiveBlurType
     this.specularOpacity = other.specularOpacity

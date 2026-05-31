@@ -46,7 +46,7 @@ export class BackgroundTextureLoader {
       size: [width, height],
       format: 'rgba8unorm',
       mipLevelCount,
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
     })
 
     this.device.queue.copyExternalImageToTexture(
@@ -69,7 +69,7 @@ export class BackgroundTextureLoader {
       size: [width, height],
       format: 'rgba8unorm',
       mipLevelCount,
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
     })
 
     this.device.queue.copyExternalImageToTexture(

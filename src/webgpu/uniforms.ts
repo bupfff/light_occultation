@@ -68,6 +68,7 @@ export function createGlassUniformData(input: GlassUniformInput): Float32Array {
     rect.height,
     rect.radius,
     params.blurType,
+    params.blurOpacity,
     params.glassTintR,
     params.glassTintG,
     params.glassTintB,

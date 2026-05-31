@@ -37,7 +37,8 @@ export function createDefaultGlassParams(): GlassParams {
 
     // Blur
     blurAmount: 0.0,
-    blurType: 1,
+    blurType: 0,
+    blurOpacity: 1.0,
     progressiveBlur: 0,
     progressiveBlurType: 0,
 

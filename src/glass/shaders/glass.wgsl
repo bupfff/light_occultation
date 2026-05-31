@@ -38,6 +38,7 @@ struct Uniforms {
   rect_height: f32,
   rect_radius: f32,
   blur_type: f32,
+  blur_opacity: f32,
   glass_tint_r: f32,
   glass_tint_g: f32,
   glass_tint_b: f32,
@@ -215,6 +216,11 @@ struct VertexOutput {
 @group(0) @binding(5) var icon_left_texture: texture_2d<f32>;
 @group(0) @binding(6) var icon_right_texture: texture_2d<f32>;
 @group(0) @binding(7) var<storage, read> circle_instances: array<CircleInstanceData, 8>;
+@group(0) @binding(8) var blur_pyramid: texture_2d_array<f32>;
+
+// Blur pyramid radii in CSS pixels (must match BlurPyramid.blurRadii)
+const BLUR_PYRAMID_RADII = array<f32, 5>(0.0, 8.0, 16.0, 32.0, 64.0);
+const BLUR_PYRAMID_LEVELS = 5;
 
 // Surface height functions (x = 0 at edge, x = 1 at end of bezel)
 fn surface_convex_circle(x: f32) -> f32 {
@@ -384,33 +390,53 @@ fn sample_image_background(pixel: vec2f, mip_level: f32) -> vec3f {
   return textureSampleLevel(bg_texture, bg_sampler, texture_cover_uv(pixel), mip_level).rgb;
 }
 
-fn sample_image_frosted(pixel: vec2f, blur: f32) -> vec3f {
-  let frost_strength = clamp(blur / 100.0, 0.0, 1.0);
-  let frost = frost_noise(pixel);
-  let mip_level = clamp(blur * 0.075 + frost * frost_strength * 2.5, 0.0, 10.0);
-  let scatter_radius = (blur * 0.35 + blur * blur * 0.004) * (0.55 + frost * 0.65);
+// Sample from the Gaussian blur pyramid with interpolation between levels
+fn sample_blur_pyramid(pixel: vec2f, blur_radius: f32) -> vec3f {
+  // Use simple canvas-space UVs since blur pyramid matches canvas size
+  let uv = pixel / vec2f(uniforms.canvas_width, uniforms.canvas_height);
 
-  let angle = hash12(floor(pixel * 0.031)) * 6.2831853;
-  let s = sin(angle);
-  let c = cos(angle);
-  let axis_x = vec2f(c, s);
-  let axis_y = vec2f(-s, c);
+  // Find the two pyramid levels to interpolate between
+  var level_low = 0;
+  var level_high = 0;
+  var t = 0.0;
 
-  var color = sample_image_background(pixel, mip_level) * 0.32;
-  color += sample_image_background(pixel + (axis_x * 0.52 + axis_y * 0.18) * scatter_radius, mip_level + 0.35) * 0.12;
-  color += sample_image_background(pixel - (axis_x * 0.52 + axis_y * 0.18) * scatter_radius, mip_level + 0.35) * 0.12;
-  color += sample_image_background(pixel + (-axis_x * 0.21 + axis_y * 0.64) * scatter_radius, mip_level + 0.70) * 0.10;
-  color += sample_image_background(pixel - (-axis_x * 0.21 + axis_y * 0.64) * scatter_radius, mip_level + 0.70) * 0.10;
-  color += sample_image_background(pixel + (axis_x * 0.88 - axis_y * 0.38) * scatter_radius, mip_level + 1.00) * 0.08;
-  color += sample_image_background(pixel - (axis_x * 0.88 - axis_y * 0.38) * scatter_radius, mip_level + 1.00) * 0.08;
-  color += sample_image_background(pixel + (axis_x * 0.08 + axis_y * 1.05) * scatter_radius, mip_level + 1.25) * 0.04;
-  color += sample_image_background(pixel - (axis_x * 0.08 + axis_y * 1.05) * scatter_radius, mip_level + 1.25) * 0.04;
+  // Find which levels bracket the requested blur radius
+  for (var i = 0; i < BLUR_PYRAMID_LEVELS - 1; i = i + 1) {
+    if (blur_radius >= BLUR_PYRAMID_RADII[i] && blur_radius <= BLUR_PYRAMID_RADII[i + 1]) {
+      level_low = i;
+      level_high = i + 1;
+      let range = BLUR_PYRAMID_RADII[i + 1] - BLUR_PYRAMID_RADII[i];
+      if (range > 0.0) {
+        t = (blur_radius - BLUR_PYRAMID_RADII[i]) / range;
+      }
+      break;
+    }
+  }
 
-  let haze = vec3f(dot(color, vec3f(0.299, 0.587, 0.114)));
-  color = mix(color, haze, frost_strength * 0.08);
-  color = color + vec3f((frost - 0.5) * frost_strength * 0.025);
+  // Handle blur radius beyond maximum
+  if (blur_radius > BLUR_PYRAMID_RADII[BLUR_PYRAMID_LEVELS - 1]) {
+    level_low = BLUR_PYRAMID_LEVELS - 1;
+    level_high = BLUR_PYRAMID_LEVELS - 1;
+    t = 0.0;
+  }
 
-  return color * uniforms.bg_brightness;
+  // Sample from both levels
+  let color_low = textureSampleLevel(blur_pyramid, bg_sampler, uv, level_low, 0.0).rgb;
+  let color_high = textureSampleLevel(blur_pyramid, bg_sampler, uv, level_high, 0.0).rgb;
+
+  // Smooth interpolation between levels
+  let smooth_t = t * t * (3.0 - 2.0 * t);
+  return mix(color_low, color_high, smooth_t);
+}
+
+// Sample Gaussian blur with progressive blur support and opacity control
+fn sample_image_gaussian(pixel: vec2f, blur: f32) -> vec3f {
+  // Use mipmap-based blur (smooth, no grid artifacts)
+  let mip_level = blur * 0.1;
+  let blurred = sample_image_background(pixel, mip_level);
+  let original = sample_image_background(pixel, 0.0);
+  // Blend between original and blurred based on blur_opacity
+  return mix(original, blurred, uniforms.blur_opacity);
 }
 
 fn sample_background_blurred(pixel: vec2f, time: f32, blur: f32) -> vec3f {
@@ -745,12 +771,7 @@ fn sample_background_internal(pixel: vec2f, time: f32, blur: f32) -> vec3f {
   let uv = pixel / vec2f(uniforms.canvas_width, uniforms.canvas_height);
 
   if (uniforms.use_image_bg > 0.5) {
-    if (uniforms.blur_type < 0.5) {
-      let mip_level = blur * 0.1;
-      return sample_image_background(pixel, mip_level) * uniforms.bg_brightness;
-    }
-
-    return sample_image_frosted(pixel, blur);
+    return sample_image_gaussian(pixel, blur);
   }
 
   let color_tl = vec3f(0.78, 0.78, 0.78);
@@ -773,20 +794,16 @@ fn sample_background_internal(pixel: vec2f, time: f32, blur: f32) -> vec3f {
   let grid_x = abs(fract(grid_pixel.x / grid_size) - 0.5) * 2.0;
   let grid_y = abs(fract(grid_pixel.y / grid_size) - 0.5) * 2.0;
 
-  let frost_strength = clamp(blur / 100.0, 0.0, 1.0);
-  let frost = frost_noise(pixel);
-  let local_blur = select(blur, blur * (0.76 + frost * 0.58), uniforms.blur_type > 0.5);
-
-  let blur_spread = local_blur * 0.2;
+  let blur_spread = blur * 0.2;
   let line_width = base_line_width + blur_spread;
   let line_threshold = 1.0 - (line_width / grid_size);
 
-  let edge_width = 0.02 + local_blur * 0.003;
+  let edge_width = 0.02 + blur * 0.003;
   let grid_line_x = smoothstep(line_threshold - edge_width, line_threshold + edge_width, grid_x);
   let grid_line_y = smoothstep(line_threshold - edge_width, line_threshold + edge_width, grid_y);
   let grid_line = max(grid_line_x, grid_line_y);
 
-  let blur_color_blend = min(1.0, local_blur * 0.01);
+  let blur_color_blend = min(1.0, blur * 0.01);
   let avg_color = (color_tl + color_mid + color_br) / 3.0;
   bg_color = mix(bg_color, avg_color, blur_color_blend);
 
@@ -794,31 +811,11 @@ fn sample_background_internal(pixel: vec2f, time: f32, blur: f32) -> vec3f {
   let checker_color = select(vec3f(0.71, 0.71, 0.71), vec3f(0.78, 0.78, 0.78), checker_index % 2 == 0);
   bg_color = mix(bg_color, checker_color, 0.92);
 
-  var final_color = bg_color;
-  if (uniforms.blur_type > 0.5) {
-    final_color = mix(final_color, avg_color, frost_strength * 0.08 * frost);
-    final_color = final_color + vec3f((frost - 0.5) * frost_strength * 0.025);
-  }
-
-  return final_color * uniforms.bg_brightness;
+  return bg_color * uniforms.bg_brightness;
 }
 
 fn sample_background(pixel: vec2f, time: f32) -> vec3f {
   return apply_track_overlay(pixel, sample_background_internal(pixel, time, 0.0));
-}
-
-fn sample_background_with_blur_type(pixel: vec2f, time: f32, blur: f32, blur_type: f32) -> vec3f {
-  let uv = pixel / vec2f(uniforms.canvas_width, uniforms.canvas_height);
-
-  if (uniforms.use_image_bg > 0.5) {
-    if (blur_type < 0.5) {
-      let mip_level = blur * 0.1;
-      return sample_image_background(pixel, mip_level) * uniforms.bg_brightness;
-    }
-    return sample_image_frosted(pixel, blur);
-  }
-
-  return sample_background_internal(pixel, time, blur);
 }
 
 @vertex
@@ -1226,7 +1223,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     // Inside flat center
     if (distance_from_edge >= bezel_pixels) {
       let center_blur = calculate_instance_progressive_blur(to_pixel, 1.0, inst);
-      var center_color = sample_background_with_blur_type(magnified_pixel, uniforms.time, center_blur, inst.blur_type);
+      var center_color = sample_background_internal(magnified_pixel, uniforms.time, center_blur);
       center_color = apply_instance_glass_tint(center_color, inst);
       center_color = apply_instance_icon_overlay(pixel, center_color, circle.center, circle.radius, inst);
       return vec4f(center_color, 1.0);
@@ -1265,12 +1262,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
       let displaced_g = magnified_pixel - direction * displacement;
       let displaced_b = magnified_pixel - direction * (displacement + aberration_amount);
 
-      let r = sample_background_with_blur_type(displaced_r, uniforms.time, progressive_blur, inst.blur_type).r;
-      let g = sample_background_with_blur_type(displaced_g, uniforms.time, progressive_blur, inst.blur_type).g;
-      let b = sample_background_with_blur_type(displaced_b, uniforms.time, progressive_blur, inst.blur_type).b;
+      let r = sample_background_internal(displaced_r, uniforms.time, progressive_blur).r;
+      let g = sample_background_internal(displaced_g, uniforms.time, progressive_blur).g;
+      let b = sample_background_internal(displaced_b, uniforms.time, progressive_blur).b;
       color = vec3f(r, g, b);
     } else {
-      color = sample_background_with_blur_type(displaced_pixel, uniforms.time, progressive_blur, inst.blur_type);
+      color = sample_background_internal(displaced_pixel, uniforms.time, progressive_blur);
     }
 
     color = apply_instance_glass_tint(color, inst);

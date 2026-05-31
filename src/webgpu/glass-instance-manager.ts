@@ -391,6 +391,7 @@ export class GlassInstanceManager {
       shadowOffsetY: instance.shadowOffsetY,
       blurAmount: instance.blurAmount,
       blurType: instance.blurType,
+      blurOpacity: instance.blurOpacity,
       progressiveBlur: instance.progressiveBlur,
       progressiveBlurType: instance.progressiveBlurType,
       specularOpacity: instance.specularOpacity,
