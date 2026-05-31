@@ -5,8 +5,8 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Glass Effect WebGPU</title>
-    <script type="module" crossorigin src="/glass-effect-webgpu/assets/index-DjdU7D91.js"></script>
-    <link rel="stylesheet" crossorigin href="/glass-effect-webgpu/assets/index-CEFP6-kY.css">
+    <script type="module" crossorigin src="/glass-effect-webgpu/assets/index-39HAN2PI.js"></script>
+    <link rel="stylesheet" crossorigin href="/glass-effect-webgpu/assets/index-YFcuPIeU.css">
   </head>
   <body>
     <div id="app">
@@ -208,7 +208,6 @@
                   <option value="banner">Liquid Glass</option>
                   <option value="article">HTML-in-Canvas</option>
                   <option value="grid">CSS Animation</option>
-                  <option value="fuji">Fuji Mountain</option>
                 </select>
               </div>
               <div class="control-row grid-only-control">
@@ -228,15 +227,12 @@
             <div class="control-group has-instance-control">
               <div class="control-group-title">Optics</div>
               <div class="control-row">
-                <label>Blur Type</label>
-                <select id="blurType">
-                  <option value="0">Gaussian</option>
-                  <option value="1">Frosted Scatter</option>
-                </select>
-              </div>
-              <div class="control-row">
                 <label>Blur</label>
                 <input type="range" id="blurAmount" min="0" max="100" step="1" value="0">
+              </div>
+              <div class="control-row">
+                <label>Blur Opacity</label>
+                <input type="range" id="blurOpacity" min="0" max="1" step="0.01" value="1">
               </div>
               <div class="control-row">
                 <label>Progressive Blur</label>
