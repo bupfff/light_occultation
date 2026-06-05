@@ -62,6 +62,10 @@ export class WebGPURenderer {
   private circlePresetStackTextures: GPUTexture[] = []
   private pendingTextureDestroys: GPUTexture[] = []
   private textureDestroyFlushScheduled = false
+  private backgroundVideoElement: HTMLVideoElement | null = null
+  private videoFrameCanvas: HTMLCanvasElement | null = null
+  private videoFrameContext: CanvasRenderingContext2D | null = null
+  private videoTextureMipLevelCount = 1
 
   // Gaussian blur pyramid for true gaussian blur with progressive blur support
   private blurPyramid: BlurPyramid | null = null
@@ -138,6 +142,39 @@ export class WebGPURenderer {
 
     // Clean up previous background
     this.cleanupBackground()
+
+    if (type === 'video') {
+      const element = createBackgroundElement(type, {
+        video: { videoUrl: `${import.meta.env.BASE_URL}assets/video.mp4` },
+      })
+      if (!element) return
+
+      const video = element.querySelector('video')
+      if (!video) return
+
+      this.backgroundElement = element
+      const preview = this.canvas.closest('.preview')
+      if (preview) {
+        preview.appendChild(element)
+      } else {
+        document.body.appendChild(element)
+      }
+      element.style.position = 'fixed'
+      element.style.left = '-9999px'
+      element.style.top = '0'
+      element.style.width = `${Math.max(this.canvas.clientWidth, 1)}px`
+      element.style.height = `${Math.max(this.canvas.clientHeight, 1)}px`
+      element.style.opacity = '0'
+      element.style.pointerEvents = 'none'
+
+      await this.setupVideoTexture(video)
+
+      if (requestId !== this.backgroundRequestId) return
+
+      this.glassParams.useImageBg = true
+      this.bindGroup = this.createRenderBindGroup(this.bgTexture)
+      return
+    }
 
     if (isTemplateBackground(type)) {
       const width = this.canvas.clientWidth
@@ -356,6 +393,143 @@ export class WebGPURenderer {
     this.blurPyramidNeedsUpdate = true
   }
 
+  private async setupVideoTexture(video: HTMLVideoElement): Promise<void> {
+    this.backgroundVideoElement = video
+    video.muted = true
+    video.loop = true
+    video.playsInline = true
+    video.preload = 'auto'
+    video.autoplay = true
+
+    if (!video.currentSrc && video.src) {
+      video.src = new URL(video.src, window.location.href).href
+    }
+
+    if (video.readyState < HTMLMediaElement.HAVE_METADATA) {
+      await new Promise<void>((resolve, reject) => {
+        const onLoadedMetadata = () => {
+          video.removeEventListener('loadedmetadata', onLoadedMetadata)
+          video.removeEventListener('error', onError)
+          resolve()
+        }
+        const onError = () => {
+          video.removeEventListener('loadedmetadata', onLoadedMetadata)
+          video.removeEventListener('error', onError)
+          const code = video.error?.code ?? 'unknown'
+          const message = video.error?.message ? `: ${video.error.message}` : ''
+          reject(new Error(`Failed to load video background (${video.currentSrc || video.src}, code ${code}${message})`))
+        }
+        video.addEventListener('loadedmetadata', onLoadedMetadata)
+        video.addEventListener('error', onError)
+        video.load()
+      })
+    }
+
+    try {
+      await video.play()
+    } catch (error) {
+      console.warn('Video autoplay failed:', error)
+    }
+
+    await new Promise<void>((resolve) => {
+      if ('requestVideoFrameCallback' in video) {
+        (video as HTMLVideoElement & { requestVideoFrameCallback: (callback: () => void) => void })
+          .requestVideoFrameCallback(() => resolve())
+      } else {
+        requestAnimationFrame(() => resolve())
+      }
+    })
+
+    const width = Math.max(1, this.canvas.width)
+    const height = Math.max(1, this.canvas.height)
+    const wrapper = video.closest<HTMLElement>('.video-background')
+    if (wrapper) {
+      wrapper.style.width = `${width}px`
+      wrapper.style.height = `${height}px`
+    }
+    this.videoFrameCanvas = document.createElement('canvas')
+    this.videoFrameCanvas.width = width
+    this.videoFrameCanvas.height = height
+    this.videoFrameContext = this.videoFrameCanvas.getContext('2d')
+    this.videoTextureMipLevelCount = Math.floor(Math.log2(Math.max(width, height))) + 1
+    this.backgroundTexture = this.device.createTexture({
+      size: [width, height],
+      format: 'rgba8unorm',
+      mipLevelCount: this.videoTextureMipLevelCount,
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
+    })
+    this.bgTexture = this.backgroundTexture
+    this.updateVideoTexture()
+    this.blurPyramidNeedsUpdate = true
+  }
+
+  private updateVideoTexture(): void {
+    const video = this.backgroundVideoElement
+    if (!video || !this.backgroundTexture || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
+    if (video.videoWidth < 1 || video.videoHeight < 1) return
+
+    const width = Math.max(1, this.canvas.width)
+    const height = Math.max(1, this.canvas.height)
+
+    if (this.backgroundTexture.width !== width || this.backgroundTexture.height !== height) {
+      this.deferTextureDestroy(this.backgroundTexture)
+      this.videoTextureMipLevelCount = Math.floor(Math.log2(Math.max(width, height))) + 1
+      this.backgroundTexture = this.device.createTexture({
+        size: [width, height],
+        format: 'rgba8unorm',
+        mipLevelCount: this.videoTextureMipLevelCount,
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC | GPUTextureUsage.RENDER_ATTACHMENT,
+      })
+      this.bgTexture = this.backgroundTexture
+      this.bindGroup = this.createRenderBindGroup(this.bgTexture)
+    }
+
+    if (!this.videoFrameCanvas || !this.videoFrameContext) return
+    if (this.videoFrameCanvas.width !== width || this.videoFrameCanvas.height !== height) {
+      this.videoFrameCanvas.width = width
+      this.videoFrameCanvas.height = height
+    }
+
+    const canvasAspect = width / height
+    const videoAspect = video.videoWidth / video.videoHeight
+    let sourceX = 0
+    let sourceY = 0
+    let sourceWidth = video.videoWidth
+    let sourceHeight = video.videoHeight
+
+    if (canvasAspect > videoAspect) {
+      sourceHeight = video.videoWidth / canvasAspect
+      sourceY = (video.videoHeight - sourceHeight) * 0.5
+    } else {
+      sourceWidth = video.videoHeight * canvasAspect
+      sourceX = (video.videoWidth - sourceWidth) * 0.5
+    }
+
+    this.videoFrameContext.drawImage(
+      video,
+      sourceX,
+      sourceY,
+      sourceWidth,
+      sourceHeight,
+      0,
+      0,
+      width,
+      height
+    )
+
+    this.device.queue.copyExternalImageToTexture(
+      { source: this.videoFrameCanvas },
+      { texture: this.backgroundTexture },
+      [width, height]
+    )
+
+    if (this.videoTextureMipLevelCount > 1) {
+      this.textureLoader.generateMipmapsSync(this.backgroundTexture, this.videoTextureMipLevelCount)
+    }
+
+    this.blurPyramidNeedsUpdate = true
+  }
+
   /**
    * Clean up background element and textures
    */
@@ -376,6 +550,14 @@ export class WebGPURenderer {
       this.backgroundElement.remove()
       this.backgroundElement = null
     }
+
+    if (this.backgroundVideoElement) {
+      this.backgroundVideoElement.pause()
+      this.backgroundVideoElement.src = ''
+      this.backgroundVideoElement = null
+    }
+    this.videoFrameCanvas = null
+    this.videoFrameContext = null
 
     if (this.backgroundTexture) {
       this.bgTexture = this.createEmptyTexture()
@@ -713,6 +895,14 @@ export class WebGPURenderer {
         this.blurPyramidNeedsUpdate = true
       } catch {
         // Silently ignore texture update errors in render loop
+      }
+    }
+
+    if (this.backgroundVideoElement && this.backgroundTexture) {
+      try {
+        this.updateVideoTexture()
+      } catch (error) {
+        console.warn('Video texture update failed:', error)
       }
     }
 

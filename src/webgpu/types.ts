@@ -76,7 +76,7 @@ export interface GlassParams {
   circlePresetActiveIndex: number
 }
 
-export type BackgroundType = 'grid' | 'banner' | 'article'
+export type BackgroundType = 'grid' | 'banner' | 'article' | 'video'
 
 export interface Point {
   x: number

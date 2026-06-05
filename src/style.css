@@ -614,6 +614,23 @@ body {
   color: rgba(255, 255, 255, 0.82);
 }
 
+/* Video Background */
+.video-background {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: #111;
+}
+
+.video-background-media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+
 @container preview (max-width: 700px) {
   .banner-copy {
     width: calc(100% - 48px);
