@@ -7,6 +7,8 @@ import {
 } from './glass-instance'
 import { CircleInstance, DEFAULT_CIRCLE_INSTANCE_CONFIG, type CircleInstanceConfig } from './circle-instance'
 import { RectangleInstance, DEFAULT_RECTANGLE_INSTANCE_CONFIG, type RectangleInstanceConfig } from './rectangle-instance'
+import { CustomInstance, MAX_CUSTOM_SCALE, MIN_CUSTOM_SCALE } from './custom-instance'
+import type { CustomShape } from './custom-shape'
 import type { BackgroundTextureLoader } from './texture-loader'
 
 export type ShapeType = 'circle' | 'rectangle'
@@ -115,6 +117,11 @@ export class GlassInstanceManager {
     return instance instanceof RectangleInstance ? instance : undefined
   }
 
+  getCustomInstance(index: number): CustomInstance | undefined {
+    const instance = this._instances[index]
+    return instance instanceof CustomInstance ? instance : undefined
+  }
+
   reset(shapeType?: ShapeType, initialConfig?: Partial<CircleInstanceConfig | RectangleInstanceConfig>): void {
     this._instances = []
     this._activeIndex = 0
@@ -205,6 +212,42 @@ export class GlassInstanceManager {
     return index
   }
 
+  addCustomInstance(shape: CustomShape, centerX: number, centerY: number): number {
+    if (this._instances.length >= MAX_GLASS_INSTANCES) {
+      return -1
+    }
+
+    const usedLayers = new Set(
+      this._instances
+        .filter((instance) => instance instanceof CustomInstance)
+        .map((instance) => instance.customSdfLayer)
+    )
+    const sdfLayer = [...Array(MAX_GLASS_INSTANCES).keys()].find((layer) => !usedLayers.has(layer)) ?? 0
+
+    // New sketches pick up the look of the selected shape, or the most recent one.
+    const reference = this._instances[this._activeIndex] ?? this._instances[this._instances.length - 1]
+    const index = this._instances.length
+
+    this._instances.push(new CustomInstance(
+      this.device,
+      this.textureLoader,
+      this.emptyTexture,
+      {
+        ...(reference ? this.extractBaseConfig(reference) : {}),
+        iconType: 0,
+        centerX,
+        centerY,
+        isActive: false,
+        shape,
+        sdfLayer,
+      },
+      this.onTextureChange
+    ))
+    this.setActiveIndex(index)
+
+    return index
+  }
+
   removeInstance(index: number): boolean {
     if (this._instances.length < 1 || index < 0 || index >= this._instances.length) {
       return false
@@ -269,6 +312,10 @@ export class GlassInstanceManager {
     canvasHeight: number,
     dpr: number
   ): number {
+    if (instance instanceof CustomInstance) {
+      return instance.distanceTo((pointX - centerX) / dpr, (pointY - centerY) / dpr) * dpr
+    }
+
     if (instance instanceof RectangleInstance) {
       const rectWidth = instance.rectWidth * dpr
       const rectHeight = instance.rectHeight * dpr
@@ -453,5 +500,6 @@ export class GlassInstanceManager {
 
 // Re-export for backwards compatibility
 export { CircleInstance } from './circle-instance'
+export { CustomInstance, MIN_CUSTOM_SCALE, MAX_CUSTOM_SCALE }
 export { RectangleInstance } from './rectangle-instance'
 export { GlassInstance } from './glass-instance'

@@ -124,7 +124,8 @@ struct CircleInstanceData {
   rect_width: f32,
   rect_height: f32,
   rect_radius: f32,
-  _pad0: f32,
+  // Custom shapes: half the distance field's side length in device pixels
+  custom_domain: f32,
 
   // Surface & refraction (vec4 + vec4)
   surface_type: f32,
@@ -186,7 +187,7 @@ struct CircleInstanceData {
   pressed_glass_bg_opacity: f32,
   specular_thickness: f32,
   specular_blur: f32,
-  _pad7: f32,
+  custom_sdf_layer: f32,
 
   // Padding to reach 64 floats (vec4 * 3)
   _pad8: f32,
@@ -217,10 +218,14 @@ struct VertexOutput {
 @group(0) @binding(6) var icon_right_texture: texture_2d<f32>;
 @group(0) @binding(7) var<storage, read> circle_instances: array<CircleInstanceData, 8>;
 @group(0) @binding(8) var blur_pyramid: texture_2d_array<f32>;
+@group(0) @binding(9) var custom_sdf_atlas: texture_2d_array<f32>;
 
 // Blur pyramid radii in CSS pixels (must match BlurPyramid.blurRadii)
 const BLUR_PYRAMID_RADII = array<f32, 5>(0.0, 8.0, 16.0, 32.0, 64.0);
 const BLUR_PYRAMID_LEVELS = 5;
+
+// Must match CUSTOM_SDF_SIZE in custom-shape.ts
+const CUSTOM_SDF_SIZE = 512.0;
 
 // Surface height functions (x = 0 at edge, x = 1 at end of bezel)
 fn surface_convex_circle(x: f32) -> f32 {
@@ -905,11 +910,30 @@ fn get_instance_scale(inst: CircleInstanceData) -> vec2f {
   return vec2f(inst.scale_x, inst.scale_y);
 }
 
+// Reads a sketched shape's distance field. Points past the field's edge add their
+// distance to it, so soft shadows can still extend beyond the texture.
+fn custom_shape_sdf(p: vec2f, inst: CircleInstanceData) -> f32 {
+  let field_p = p / inst.custom_domain;
+  let clamped = clamp(field_p, vec2f(-0.99), vec2f(0.99));
+  let uv = clamped * 0.5 + vec2f(0.5);
+  let distance = textureSampleLevel(custom_sdf_atlas, icon_sampler, uv, i32(inst.custom_sdf_layer), 0.0).r;
+  return (distance + length(field_p - clamped)) * inst.custom_domain;
+}
+
+// Sampling across more than one texel keeps refraction smooth between field texels.
+fn custom_normal_step(inst: CircleInstanceData) -> f32 {
+  return max(1.0, inst.custom_domain * 2.0 / CUSTOM_SDF_SIZE * 1.5);
+}
+
 fn instance_item_sdf(pixel: vec2f, circle_index: i32) -> f32 {
   let inst = circle_instances[circle_index];
   let center = get_instance_center(inst);
   let scale = get_instance_scale(inst);
   let scaled_p = (pixel - center) / scale;
+
+  if (inst.shape_type > 1.5) {
+    return custom_shape_sdf(scaled_p, inst);
+  }
 
   if (inst.shape_type > 0.5) {
     let half_size = vec2f(inst.rect_width, inst.rect_height) * 0.5 * inst.size;
@@ -922,6 +946,19 @@ fn instance_item_sdf(pixel: vec2f, circle_index: i32) -> f32 {
 }
 
 fn instance_item_normal(pixel: vec2f, circle_index: i32) -> vec2f {
+  let inst = circle_instances[circle_index];
+  if (inst.shape_type > 1.5) {
+    let step = custom_normal_step(inst);
+    let gradient = vec2f(
+      instance_item_sdf(pixel + vec2f(step, 0.0), circle_index) - instance_item_sdf(pixel - vec2f(step, 0.0), circle_index),
+      instance_item_sdf(pixel + vec2f(0.0, step), circle_index) - instance_item_sdf(pixel - vec2f(0.0, step), circle_index)
+    );
+    if (length(gradient) < 0.0001) {
+      return normalize(pixel - get_instance_center(inst) + vec2f(0.001, 0.0));
+    }
+    return normalize(gradient);
+  }
+
   let eps = 1.0;
   let d = instance_item_sdf(pixel, circle_index);
   let dx = instance_item_sdf(pixel + vec2f(eps, 0.0), circle_index) - d;
@@ -986,6 +1023,27 @@ fn instances_shadow_alpha(pixel: vec2f) -> f32 {
 }
 
 fn instances_merged_normal(pixel: vec2f) -> vec2f {
+  let count = i32(min(uniforms.circle_preset_count, 8.0));
+  var custom_step = 0.0;
+  for (var i = 0; i < 8; i = i + 1) {
+    if (i >= count) { break; }
+    let inst = circle_instances[i];
+    if (inst.shape_type > 1.5) {
+      custom_step = max(custom_step, custom_normal_step(inst));
+    }
+  }
+
+  if (custom_step > 0.0) {
+    let gradient = vec2f(
+      instances_merged_sdf(pixel + vec2f(custom_step, 0.0)) - instances_merged_sdf(pixel - vec2f(custom_step, 0.0)),
+      instances_merged_sdf(pixel + vec2f(0.0, custom_step)) - instances_merged_sdf(pixel - vec2f(0.0, custom_step))
+    );
+    if (length(gradient) < 0.0001) {
+      return vec2f(1.0, 0.0);
+    }
+    return normalize(gradient);
+  }
+
   let eps = 1.0;
   let d = instances_merged_sdf(pixel);
   let dx = instances_merged_sdf(pixel + vec2f(eps, 0.0)) - d;
@@ -1190,10 +1248,11 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
   // For circle preset mode, use per-instance properties
   if (uniforms.circle_preset_mode > 0.5) {
     let inst = circle_instances[circle.index];
+    // For custom shapes rect_radius carries the inscribed radius, which limits the bezel.
     let inst_shape_ref = select(
-      effective_radius,
-      min(inst.rect_width, inst.rect_height) * 0.5,
-      inst.shape_type > 0.5
+      select(effective_radius, min(inst.rect_width, inst.rect_height) * 0.5, inst.shape_type > 0.5),
+      max(inst.rect_radius, 1.0),
+      inst.shape_type > 1.5
     );
 
     let magnified_pixel = apply_instance_magnifying_displacement(pixel, glass_center, inst_shape_ref, inst);

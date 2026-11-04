@@ -24,10 +24,11 @@ async function main() {
   } catch (error) {
     console.error(error)
     appRoot.classList.add('scene-load-error')
-    loadingOverlay.setAttribute(
-      'aria-label',
-      error instanceof Error ? error.message : 'Failed to load scene'
-    )
+    const message = navigator.gpu
+      ? 'The scene could not load. Reload the page, and if that fails, check that hardware acceleration is on.'
+      : 'This browser has WebGPU turned off. Open the page in a recent Chrome or Edge, or turn on hardware acceleration.'
+    loadingOverlay.setAttribute('aria-label', message)
+    loadingOverlay.querySelector('.loading-message')?.replaceChildren(message)
   }
 }
 

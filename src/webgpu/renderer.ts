@@ -1,5 +1,7 @@
 import html2canvas from 'html2canvas'
-import { GlassInstanceManager, CircleInstance, RectangleInstance, GlassInstance } from './glass-instance-manager'
+import { GlassInstanceManager, CircleInstance, CustomInstance, RectangleInstance, GlassInstance } from './glass-instance-manager'
+import { CUSTOM_SDF_SIZE, type CustomShape } from './custom-shape'
+import { MAX_GLASS_INSTANCES } from './glass-instance'
 import type { ShapeType } from './glass-instance-manager'
 import { createDefaultGlassParams } from './defaults'
 import { createBackgroundElement, isTemplateBackground, type BackgroundTemplateOptions } from '../templates'
@@ -29,6 +31,8 @@ export type { BackgroundType, GlassParams } from './types'
 export { GlassInstance } from './glass-instance'
 export { CircleInstance, type CircleInstanceConfig } from './circle-instance'
 export { RectangleInstance, type RectangleInstanceConfig } from './rectangle-instance'
+export { CustomInstance, MAX_CUSTOM_SCALE, MIN_CUSTOM_SCALE, type CustomInstanceConfig } from './custom-instance'
+export { MAX_GLASS_INSTANCES } from './glass-instance'
 export { GlassInstanceManager, type ShapeType } from './glass-instance-manager'
 
 export class WebGPURenderer {
@@ -41,6 +45,8 @@ export class WebGPURenderer {
   private bgTexture!: GPUTexture
   private bgSampler!: GPUSampler
   private iconTexture!: GPUTexture
+  private customSdfAtlas!: GPUTexture
+  private customSdfView!: GPUTextureView
   private iconSampler!: GPUSampler
   private bindGroupLayout!: GPUBindGroupLayout
   private textureLoader!: BackgroundTextureLoader
@@ -107,6 +113,17 @@ export class WebGPURenderer {
     this.bgTexture = this.createEmptyTexture()
     this.iconTexture = this.createEmptyTexture()
     this.bindGroupLayout = createBindGroupLayout(this.device)
+
+    // One layer per possible glass instance holds sketched shapes' distance fields
+    this.customSdfAtlas = this.device.createTexture({
+      size: [CUSTOM_SDF_SIZE, CUSTOM_SDF_SIZE, MAX_GLASS_INSTANCES],
+      format: 'r16float',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    })
+    this.customSdfView = this.customSdfAtlas.createView({
+      dimension: '2d-array',
+      arrayLayerCount: MAX_GLASS_INSTANCES,
+    })
 
     // Initialize glass instance manager for circle/rectangle preset modes
     this._glassInstanceManager = new GlassInstanceManager(
@@ -632,6 +649,16 @@ export class WebGPURenderer {
       : undefined
   }
 
+  getActiveCustomInstance(): CustomInstance | undefined {
+    return this._glassInstanceManager.activeInstance instanceof CustomInstance
+      ? this._glassInstanceManager.activeInstance
+      : undefined
+  }
+
+  get glassInstanceCount(): number {
+    return this._glassInstanceManager.count
+  }
+
   getActiveGlassInstance(): GlassInstance | undefined {
     return this._glassInstanceManager.activeInstance
   }
@@ -725,6 +752,49 @@ export class WebGPURenderer {
     this.glassParams.circlePresetCount = this._glassInstanceManager.count
     this.glassParams.circlePresetActiveIndex = this._glassInstanceManager.activeIndex
     return index
+  }
+
+  addCustomShape(shape: CustomShape): number {
+    const center = this.normalizedShapeCenter(shape)
+    const index = this._glassInstanceManager.addCustomInstance(shape, center.x, center.y)
+    if (index < 0) return index
+
+    const instance = this._glassInstanceManager.getCustomInstance(index)
+    if (instance) {
+      this.uploadCustomShape(instance)
+    }
+    this.glassParams.circlePresetCount = this._glassInstanceManager.count
+    this.glassParams.circlePresetActiveIndex = this._glassInstanceManager.activeIndex
+    return index
+  }
+
+  replaceActiveCustomShape(shape: CustomShape): void {
+    const instance = this.getActiveCustomInstance()
+    if (!instance) return
+
+    const center = this.normalizedShapeCenter(shape)
+    instance.shape = shape
+    instance.scale = 1
+    instance.centerX = center.x
+    instance.centerY = center.y
+    this.uploadCustomShape(instance)
+  }
+
+  private normalizedShapeCenter(shape: CustomShape): { x: number; y: number } {
+    return {
+      x: shape.centerX / this.canvas.clientWidth,
+      y: shape.centerY / this.canvas.clientHeight,
+    }
+  }
+
+  private uploadCustomShape(instance: CustomInstance): void {
+    const { encoded } = instance.shape
+    this.device.queue.writeTexture(
+      { texture: this.customSdfAtlas, origin: [0, 0, instance.customSdfLayer] },
+      encoded.buffer as ArrayBuffer,
+      { bytesPerRow: CUSTOM_SDF_SIZE * encoded.BYTES_PER_ELEMENT, rowsPerImage: CUSTOM_SDF_SIZE },
+      { width: CUSTOM_SDF_SIZE, height: CUSTOM_SDF_SIZE, depthOrArrayLayers: 1 }
+    )
   }
 
   setCirclePresetCircleSize(index: number, size: number): void {
@@ -1119,6 +1189,7 @@ export class WebGPURenderer {
       this.createEmptyTexture(),
       this.createEmptyTexture(),
       this._glassInstanceManager.storageBuffer,
+      this.customSdfView,
       this.blurPyramid?.createView() ?? null
     )
   }

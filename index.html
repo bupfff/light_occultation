@@ -2,23 +2,46 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="description" content="Drag refractive glass across a page, or sketch your own lens. Built with WebGPU." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Glass Effect WebGPU</title>
+    <title>Light Occultation</title>
   </head>
   <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="eclipseMark" viewBox="0 0 40 40">
+        <circle cx="20" cy="20" r="17" fill="#e8edff" opacity="0.16"/>
+        <circle cx="20" cy="20" r="13.500" fill="#e8edff"/>
+        <circle cx="21.800" cy="18.800" r="13" fill="#0f1226"/>
+        <circle cx="29.500" cy="29" r="2.300" fill="#ffc56e"/>
+      </symbol>
+    </svg>
     <div id="app">
       <div class="preview">
         <canvas id="mainCanvas"></canvas>
         <div id="loadingOverlay" class="loading-overlay" role="status" aria-live="polite" aria-label="Loading scene">
           <div class="loading-spinner" aria-hidden="true"></div>
+          <p class="loading-message"></p>
         </div>
-        <a class="github-link" href="https://github.com/jeantimex/glass-effect-webgpu" target="_blank" rel="noreferrer" aria-label="Open the Glass Effect WebGPU project on GitHub" style="visibility: hidden; opacity: 0;">
+        <a class="github-link" href="https://github.com/bupfff/light_occultation" target="_blank" rel="noreferrer" aria-label="Open the Light Occultation project on GitHub" style="visibility: hidden; opacity: 0;">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path fill="currentColor" d="M12 .5C5.73.5.75 5.58.75 12.05c0 5.16 3.27 9.54 7.81 11.08.57.11.78-.25.78-.55v-2.03c-3.18.71-3.85-1.39-3.85-1.39-.52-1.34-1.27-1.69-1.27-1.69-1.04-.73.08-.72.08-.72 1.15.08 1.76 1.21 1.76 1.21 1.02 1.78 2.67 1.27 3.33.97.1-.75.4-1.27.73-1.56-2.54-.3-5.22-1.31-5.22-5.83 0-1.29.45-2.34 1.2-3.16-.12-.3-.52-1.5.11-3.14 0 0 .98-.32 3.2 1.2.93-.26 1.92-.4 2.91-.41.99.01 1.98.15 2.91.41 2.22-1.52 3.2-1.2 3.2-1.2.63 1.64.23 2.84.11 3.14.75.82 1.2 1.87 1.2 3.16 0 4.53-2.69 5.52-5.25 5.82.42.37.79 1.11.79 2.24v3.32c0 .31.21.67.79.55 4.54-1.54 7.81-5.92 7.81-11.08C23.25 5.58 18.27.5 12 .5Z"/>
           </svg>
-          <span>jeantimex</span>
+          <span>Source</span>
         </a>
+        <div id="sketchOverlay" class="sketch-overlay" hidden>
+          <canvas id="sketchCanvas" tabindex="-1" aria-label="Sketch area"></canvas>
+          <p id="sketchHint" class="sketch-hint" role="status"></p>
+          <div class="sketch-toolbar">
+            <button id="sketchUndo" type="button">Undo</button>
+            <button id="sketchClear" type="button">Clear</button>
+            <button id="sketchCancel" type="button">Cancel</button>
+            <button id="sketchFinish" class="sketch-finish" type="button">Add shape</button>
+          </div>
+        </div>
         <button id="panelToggleButton" class="panel-toggle-button" type="button" aria-label="Open controls" aria-expanded="false" aria-controls="controlPanel">
           <svg class="panel-toggle-icon panel-toggle-open-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round"/>
@@ -32,53 +55,216 @@
       <div id="panelBackdrop" class="panel-backdrop" aria-hidden="true"></div>
 
       <div id="controlPanel" class="panel">
-        <div class="panel-section controls-section">
-          <button class="section-header" type="button" aria-expanded="true">
-            <span>CONTROLS</span>
-            <span class="section-toggle" aria-hidden="true"></span>
-          </button>
-          <div class="section-content controls-content">
-            <div class="control-group">
-              <div class="control-group-title">Shape</div>
-              <div class="control-row">
-                <label>Shape</label>
-                <select id="basicShapeType">
-                  <option value="circle">Circle</option>
-                  <option value="rectangle">Rectangle</option>
-                </select>
-              </div>
-              <div class="control-row circle-preset-only">
-                <label>Items</label>
-                <div class="button-group">
-                  <button id="circlePresetAdd" type="button">Add</button>
-                  <button id="circlePresetRemove" type="button">Remove</button>
-                </div>
-              </div>
-              <div class="control-row circle-preset-only">
-                <label>Strategy</label>
-                <select id="circlePresetStrategy">
-                  <option value="stack">Stack</option>
-                  <option value="merge">Same Layer</option>
-                </select>
-              </div>
+        <header class="brand">
+          <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true"><use href="#eclipseMark"/></svg>
+          <h1 class="brand-name">Light Occultation</h1>
+        </header>
+          <section class="add-shape" aria-labelledby="addShapeTitle">
+            <h2 id="addShapeTitle" class="panel-heading">Add a shape</h2>
+            <div class="shape-tiles">
+              <button id="addCircle" class="shape-tile" type="button">
+                <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="10.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                <span>Circle</span>
+              </button>
+              <button id="addRectangle" class="shape-tile" type="button">
+                <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4.5" y="8.5" width="23" height="15" rx="5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                <span>Rectangle</span>
+              </button>
+              <button id="addCustom" class="shape-tile" type="button" title="Sketch your own shape">
+                <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 21c-1.5-6 3-13 9-13 5 0 4 5 8 5 3.500 0 4 5 1 8-4 4-16 5.500-18 0Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+                <span>Custom</span>
+              </button>
+            </div>
+            <p id="addShapeHint" class="panel-note"></p>
+          </section>
+          <section class="selection" aria-live="polite">
+            <p class="panel-note no-instance-control hidden">Click a shape to edit it.</p>
+            <div class="selection-bar has-instance-control">
+              <h2 id="selectedShapeLabel" class="panel-heading">Circle</h2>
+              <button id="circlePresetRemove" class="quiet-button" type="button">Remove</button>
+            </div>
+            <div class="has-instance-control selection-size">
               <div class="control-row circle-only-control has-instance-control">
-                <label>Circle Size</label>
+                <label for="circleSize">Size</label>
                 <input type="range" id="circleSize" min="0.3" max="1.3" step="0.01" value="0.8">
               </div>
               <div class="control-row basic-shape-rect-control has-instance-control hidden">
-                <label>Width</label>
+                <label for="basicShapeRectWidth">Width</label>
                 <input type="range" id="basicShapeRectWidth" min="48" max="760" step="4" value="200">
               </div>
               <div class="control-row basic-shape-rect-control has-instance-control hidden">
-                <label>Height</label>
+                <label for="basicShapeRectHeight">Height</label>
                 <input type="range" id="basicShapeRectHeight" min="48" max="760" step="4" value="100">
               </div>
               <div class="control-row basic-shape-rect-control has-instance-control hidden">
-                <label>Border Radius</label>
+                <label for="basicShapeRectRadius">Corner radius</label>
                 <input type="range" id="basicShapeRectRadius" min="0" max="100" step="1" value="100">
               </div>
+              <div class="control-row custom-shape-control hidden">
+                <label for="customShapeScale">Size</label>
+                <input type="range" id="customShapeScale" min="0.25" max="2.5" step="0.01" value="1">
+              </div>
+              <div class="control-row custom-shape-control hidden">
+                <label>Outline</label>
+                <button id="customShapeRedraw" class="quiet-button" type="button">Redraw</button>
+              </div>
+            </div>
+          </section>
+          <div class="control-groups">
+            <details class="control-group has-instance-control" data-group="surface" open>
+              <summary>Surface</summary>
+              <div class="control-group-body">
+              <div class="surface-buttons-row">
+                <button class="surface-btn active" data-surface="convex-circle" title="Convex circle" aria-label="Convex circle">
+                  <svg viewBox="0 0 40 40"><path d="M5 35 Q5 5 35 5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                </button>
+                <button class="surface-btn" data-surface="convex-squircle" title="Convex squircle" aria-label="Convex squircle">
+                  <svg viewBox="0 0 40 40"><path d="M5 35 L5 24 Q5 5 24 5 L35 5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                </button>
+                <button class="surface-btn" data-surface="concave" title="Concave" aria-label="Concave">
+                  <svg viewBox="0 0 40 40"><path d="M5 5 Q5 35 35 35" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                </button>
+                <button class="surface-btn" data-surface="lip" title="Lip" aria-label="Lip">
+                  <svg viewBox="0 0 40 40"><path d="M5 25 Q10 5 20 15 Q30 25 35 20" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                </button>
+              </div>
+              <div class="control-row">
+                <label for="bezelWidth">Bezel width</label>
+                <input type="range" id="bezelWidth" min="0" max="100" value="45">
+              </div>
+              <div class="control-row">
+                <label for="glassThickness">Thickness</label>
+                <input type="range" id="glassThickness" min="0" max="100" value="10">
+              </div>
+              <div class="control-row">
+                <label for="refractiveIndex">Refractive index</label>
+                <input type="range" id="refractiveIndex" min="1" max="2.5" step="0.05" value="1.5">
+              </div>
+              <div class="control-row">
+                <label for="scaleRatio">Refraction</label>
+                <input type="range" id="scaleRatio" min="0" max="2" step="0.01" value="1">
+              </div>
+              <div class="control-row">
+                <label for="magnifyingScale">Magnify</label>
+                <input type="range" id="magnifyingScale" min="-200" max="200" step="5" value="0">
+              </div>
+              <div class="control-row">
+                <label for="chromaticAberration">Color fringing</label>
+                <input type="checkbox" id="chromaticAberration" checked>
+              </div>
+              <div class="control-row chromatic-only-control hidden">
+                <label for="chromaticStrength">Fringe strength</label>
+                <input type="range" id="chromaticStrength" min="0.1" max="5" step="0.1" value="0.2">
+              </div>
+              <div class="control-row chromatic-only-control hidden">
+                <label for="chromaticBase">Fringe base</label>
+                <input type="range" id="chromaticBase" min="0.1" max="1" step="0.05" value="0.4">
+              </div>
+              </div>
+            </details>
+            <details class="control-group has-instance-control" data-group="tint">
+              <summary>Frost and tint</summary>
+              <div class="control-group-body">
+              <div class="control-row">
+                <label for="blurAmount">Blur</label>
+                <input type="range" id="blurAmount" min="0" max="100" step="1" value="0">
+              </div>
+              <div class="control-row">
+                <label for="blurOpacity">Blur opacity</label>
+                <input type="range" id="blurOpacity" min="0" max="1" step="0.01" value="1">
+              </div>
+              <div class="control-row">
+                <label for="progressiveBlur">Edge blur</label>
+                <input type="range" id="progressiveBlur" min="0" max="1" step="0.05" value="0">
+              </div>
+              <div class="control-row">
+                <label for="progressiveBlurType">Edge blur style</label>
+                <select id="progressiveBlurType">
+                  <option value="0">Edge falloff</option>
+                  <option value="1">Overlay bands</option>
+                </select>
+              </div>
+              <div class="control-row">
+                <label for="glassTheme">Theme</label>
+                <select id="glassTheme">
+                  <option value="system">System</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <div class="control-row">
+                <label for="glassBgColor">Color</label>
+                <input type="color" id="glassBgColor" value="#ffffff">
+              </div>
+              <div class="control-row">
+                <label for="glassBgOpacity">Tint opacity</label>
+                <input type="range" id="glassBgOpacity" min="0" max="1" step="0.01" value="0">
+              </div>
+              <div class="control-row">
+                <label for="pressedGlassBgOpacity">Tint when pressed</label>
+                <input type="range" id="pressedGlassBgOpacity" min="0" max="1" step="0.01" value="0">
+              </div>
+              </div>
+            </details>
+            <details class="control-group has-instance-control" data-group="highlight">
+              <summary>Highlight</summary>
+              <div class="control-group-body">
+              <div class="control-row">
+                <label for="specularType">Style</label>
+                <select id="specularType">
+                  <option value="0">Rim light</option>
+                  <option value="1">Layered</option>
+                </select>
+              </div>
+              <div class="control-row">
+                <label for="specularOpacity">Opacity</label>
+                <input type="range" id="specularOpacity" min="0" max="1" step="0.05" value="0.8">
+              </div>
+              <div class="control-row">
+                <label for="specularThickness">Thickness</label>
+                <input type="range" id="specularThickness" min="0.25" max="8" step="0.25" value="2">
+              </div>
+              <div class="control-row">
+                <label for="specularBlur">Softness</label>
+                <input type="range" id="specularBlur" min="0" max="12" step="0.25" value="2">
+              </div>
+              <div class="control-row">
+                <label for="specularAngle">Angle</label>
+                <input type="range" id="specularAngle" min="-180" max="180" step="5" value="60">
+              </div>
+              <div class="control-row">
+                <label for="specularSaturation">Saturation</label>
+                <input type="range" id="specularSaturation" min="0" max="10" step="0.5" value="4">
+              </div>
+              </div>
+            </details>
+            <details class="control-group has-instance-control" data-group="shadow">
+              <summary>Shadow</summary>
+              <div class="control-group-body">
+              <div class="control-row">
+                <label for="shadowOpacity">Opacity</label>
+                <input type="range" id="shadowOpacity" min="0" max="1" step="0.05" value="0.1">
+              </div>
+              <div class="control-row">
+                <label for="shadowBlur">Softness</label>
+                <input type="range" id="shadowBlur" min="0" max="100" step="1" value="30">
+              </div>
+              <div class="control-row">
+                <label for="shadowOffsetX">Offset X</label>
+                <input type="range" id="shadowOffsetX" min="-50" max="50" step="1" value="0">
+              </div>
+              <div class="control-row">
+                <label for="shadowOffsetY">Offset Y</label>
+                <input type="range" id="shadowOffsetY" min="-50" max="50" step="1" value="15">
+              </div>
+              </div>
+            </details>
+            <details class="control-group has-instance-control" data-group="icon">
+              <summary>Icon</summary>
+              <div class="control-group-body">
               <div class="control-row has-instance-control">
-                <label>Icon</label>
+                <label for="iconType">Icon</label>
                 <select id="iconType">
                   <option value="none">None</option>
                   <option value="albums">Albums</option>
@@ -133,236 +319,93 @@
                 </select>
               </div>
               <div class="control-row icon-only-control has-instance-control hidden">
-                <label>Icon Opacity</label>
+                <label for="iconOpacity">Opacity</label>
                 <input type="range" id="iconOpacity" min="0" max="1" step="0.01" value="0.8">
               </div>
               <div class="control-row icon-only-control has-instance-control hidden">
-                <label>Icon Scale</label>
+                <label for="iconScale">Size</label>
                 <input type="range" id="iconScale" min="0.1" max="0.8" step="0.01" value="0.45">
               </div>
               <div class="control-row icon-only-control has-instance-control hidden">
-                <label>Icon Color</label>
+                <label for="iconColor">Color</label>
                 <input type="color" id="iconColor" value="#ffffff">
               </div>
-            </div>
-
-            <div class="control-group has-instance-control">
-              <div class="control-group-title">Surface</div>
-              <div class="surface-buttons-row">
-                <button class="surface-btn active" data-surface="convex-circle" title="Convex Circle">
-                  <svg viewBox="0 0 40 40"><path d="M5 35 Q5 5 35 5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-                </button>
-                <button class="surface-btn" data-surface="convex-squircle" title="Convex Squircle">
-                  <svg viewBox="0 0 40 40"><path d="M5 35 L5 24 Q5 5 24 5 L35 5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-                </button>
-                <button class="surface-btn" data-surface="concave" title="Concave">
-                  <svg viewBox="0 0 40 40"><path d="M5 5 Q5 35 35 35" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-                </button>
-                <button class="surface-btn" data-surface="lip" title="Lip">
-                  <svg viewBox="0 0 40 40"><path d="M5 25 Q10 5 20 15 Q30 25 35 20" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-                </button>
               </div>
-            </div>
-
-            <div class="control-group has-instance-control displacement-group collapsed">
-              <button class="control-group-header" type="button" aria-expanded="false">
-                <span class="control-group-title">Displacement Map</span>
-                <span class="section-toggle" aria-hidden="true"></span>
-              </button>
-              <div class="displacement-content">
-                <canvas id="displacementMap"></canvas>
-              </div>
-            </div>
-
-            <div class="control-group has-instance-control">
-              <div class="control-group-title">Geometry</div>
+            </details>
+            <details class="control-group has-instance-control" data-group="motion">
+              <summary>Liquid motion</summary>
+              <div class="control-group-body">
               <div class="control-row">
-                <label>Bezel Width</label>
-                <input type="range" id="bezelWidth" min="0" max="100" value="45">
-              </div>
-              <div class="control-row">
-                <label>Glass Thickness</label>
-                <input type="range" id="glassThickness" min="0" max="100" value="10">
-              </div>
-              <div class="control-row">
-                <label>Refractive Index</label>
-                <input type="range" id="refractiveIndex" min="1" max="2.5" step="0.05" value="1.5">
-              </div>
-              <div class="control-row">
-                <label>Refraction Level</label>
-                <input type="range" id="scaleRatio" min="0" max="2" step="0.01" value="1">
-              </div>
-              <div class="control-row">
-                <label>Magnifying Scale</label>
-                <input type="range" id="magnifyingScale" min="-200" max="200" step="5" value="0">
-              </div>
-            </div>
-
-            <div class="control-group">
-              <div class="control-group-title">Background</div>
-              <div class="control-row">
-                <label>Background</label>
-                <select id="backgroundType">
-                  <option value="banner">Liquid Glass</option>
-                  <option value="article">HTML-in-Canvas</option>
-                  <option value="video">Video</option>
-                  <option value="grid">CSS Animation</option>
-                </select>
-              </div>
-              <div class="control-row grid-only-control">
-                <label>Grid Cell Size</label>
-                <input type="range" id="gridCellSize" min="20" max="150" step="5" value="105">
-              </div>
-              <div class="control-row grid-only-control">
-                <label>Grid Speed</label>
-                <input type="range" id="gridSpeed" min="0" max="100" step="1" value="40">
-              </div>
-              <div class="control-row">
-                <label>Background Brightness</label>
-                <input type="range" id="bgBrightness" min="0" max="2" step="0.1" value="1">
-              </div>
-            </div>
-
-            <div class="control-group has-instance-control">
-              <div class="control-group-title">Optics</div>
-              <div class="control-row">
-                <label>Blur</label>
-                <input type="range" id="blurAmount" min="0" max="100" step="1" value="0">
-              </div>
-              <div class="control-row">
-                <label>Blur Opacity</label>
-                <input type="range" id="blurOpacity" min="0" max="1" step="0.01" value="1">
-              </div>
-              <div class="control-row">
-                <label>Progressive Blur</label>
-                <input type="range" id="progressiveBlur" min="0" max="1" step="0.05" value="0">
-              </div>
-              <div class="control-row">
-                <label>Progressive Blur Mode</label>
-                <select id="progressiveBlurType">
-                  <option value="0">Edge Falloff</option>
-                  <option value="1">Overlay Bands</option>
-                </select>
-              </div>
-              <div class="control-row">
-                <label>Chromatic Aberration</label>
-                <input type="checkbox" id="chromaticAberration" checked>
-              </div>
-              <div class="control-row chromatic-only-control hidden">
-                <label>Chromatic Strength</label>
-                <input type="range" id="chromaticStrength" min="0.1" max="5" step="0.1" value="0.2">
-              </div>
-              <div class="control-row chromatic-only-control hidden">
-                <label>Chromatic Base</label>
-                <input type="range" id="chromaticBase" min="0.1" max="1" step="0.05" value="0.4">
-              </div>
-              <div class="control-row">
-                <label>Glass Theme</label>
-                <select id="glassTheme">
-                  <option value="system">System</option>
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                  <option value="custom">Custom</option>
-                </select>
-              </div>
-              <div class="control-row">
-                <label>Glass Color</label>
-                <input type="color" id="glassBgColor" value="#ffffff">
-              </div>
-              <div class="control-row">
-                <label>Glass Background Opacity</label>
-                <input type="range" id="glassBgOpacity" min="0" max="1" step="0.01" value="0">
-              </div>
-              <div class="control-row">
-                <label>Pressed Glass Opacity</label>
-                <input type="range" id="pressedGlassBgOpacity" min="0" max="1" step="0.01" value="0">
-              </div>
-            </div>
-
-            <div class="control-group has-instance-control">
-              <div class="control-group-title">Liquid Interaction</div>
-              <div class="control-row">
-                <label>Enabled</label>
+                <label for="liquidEnabled">Enabled</label>
                 <input type="checkbox" id="liquidEnabled" checked>
               </div>
               <div class="control-row">
-                <label>Press Scale</label>
+                <label for="liquidPressScale">Press scale</label>
                 <input type="range" id="liquidPressScale" min="1" max="1.4" step="0.01" value="1.16">
               </div>
               <div class="control-row">
-                <label>Press Refraction</label>
+                <label for="liquidPressRefraction">Press refraction</label>
                 <input type="range" id="liquidPressRefraction" min="1" max="2.5" step="0.01" value="1.28">
               </div>
               <div class="control-row">
-                <label>Speed</label>
+                <label for="liquidSpeed">Speed</label>
                 <input type="range" id="liquidSpeed" min="0.25" max="2" step="0.05" value="1">
               </div>
               <div class="control-row">
-                <label>Click Squash</label>
+                <label for="liquidClickSquash">Click squash</label>
                 <input type="range" id="liquidClickSquash" min="0" max="1.5" step="0.05" value="1">
               </div>
               <div class="control-row">
-                <label>Drag Squash</label>
+                <label for="liquidDragSquash">Drag squash</label>
                 <input type="range" id="liquidDragSquash" min="0" max="2" step="0.05" value="1">
               </div>
               <div class="control-row">
-                <label>Release Squash</label>
+                <label for="liquidReleaseSquash">Release squash</label>
                 <input type="range" id="liquidReleaseSquash" min="0" max="1.5" step="0.05" value="1">
               </div>
-            </div>
-
-            <div class="control-group has-instance-control">
-              <div class="control-group-title">Specular Highlight</div>
+              </div>
+            </details>
+            <details class="control-group has-instance-control displacement-group" data-group="displacement">
+              <summary>Displacement map</summary>
+              <div class="control-group-body">
+                <canvas id="displacementMap"></canvas>
+              </div>
+            </details>
+            <details class="control-group " data-group="scene" open>
+              <summary>Scene</summary>
+              <div class="control-group-body">
               <div class="control-row">
-                <label>Specular Type</label>
-                <select id="specularType">
-                  <option value="0">Rim Lighting</option>
-                  <option value="1">Layered Specular</option>
+                <label for="backgroundType">Background</label>
+                <select id="backgroundType">
+                  <option value="banner">Title page</option>
+                  <option value="article">Article</option>
+                  <option value="video">Video</option>
+                  <option value="grid">Moving grid</option>
                 </select>
               </div>
-              <div class="control-row">
-                <label>Specular Opacity</label>
-                <input type="range" id="specularOpacity" min="0" max="1" step="0.05" value="0.8">
+              <div class="control-row grid-only-control">
+                <label for="gridCellSize">Cell size</label>
+                <input type="range" id="gridCellSize" min="20" max="150" step="5" value="105">
+              </div>
+              <div class="control-row grid-only-control">
+                <label for="gridSpeed">Speed</label>
+                <input type="range" id="gridSpeed" min="0" max="100" step="1" value="40">
               </div>
               <div class="control-row">
-                <label>Specular Thickness</label>
-                <input type="range" id="specularThickness" min="0.25" max="8" step="0.25" value="2">
+                <label for="bgBrightness">Brightness</label>
+                <input type="range" id="bgBrightness" min="0" max="2" step="0.1" value="1">
               </div>
-              <div class="control-row">
-                <label>Specular Blur</label>
-                <input type="range" id="specularBlur" min="0" max="12" step="0.25" value="2">
+              <div class="control-row circle-preset-only">
+                <label for="circlePresetStrategy">Overlap</label>
+                <select id="circlePresetStrategy">
+                  <option value="stack">Stack</option>
+                  <option value="merge">Merge</option>
+                </select>
               </div>
-              <div class="control-row">
-                <label>Specular Angle</label>
-                <input type="range" id="specularAngle" min="-180" max="180" step="5" value="60">
               </div>
-              <div class="control-row">
-                <label>Specular Saturation</label>
-                <input type="range" id="specularSaturation" min="0" max="10" step="0.5" value="4">
-              </div>
-            </div>
-
-            <div class="control-group has-instance-control">
-              <div class="control-group-title">Shadow</div>
-              <div class="control-row">
-                <label>Shadow Opacity</label>
-                <input type="range" id="shadowOpacity" min="0" max="1" step="0.05" value="0.1">
-              </div>
-              <div class="control-row">
-                <label>Shadow Blur</label>
-                <input type="range" id="shadowBlur" min="0" max="100" step="1" value="30">
-              </div>
-              <div class="control-row">
-                <label>Shadow Offset X</label>
-                <input type="range" id="shadowOffsetX" min="-50" max="50" step="1" value="0">
-              </div>
-              <div class="control-row">
-                <label>Shadow Offset Y</label>
-                <input type="range" id="shadowOffsetY" min="-50" max="50" step="1" value="15">
-              </div>
-            </div>
+            </details>
           </div>
-        </div>
+        <footer class="panel-credit">Based on <a href="https://github.com/jeantimex/glass-effect-webgpu" target="_blank" rel="noreferrer">Glass Effect WebGPU</a> by jeantimex</footer>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
