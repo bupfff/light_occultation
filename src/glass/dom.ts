@@ -50,15 +50,22 @@ export interface GlassControls {
   surfaceButtons: NodeListOf<HTMLButtonElement>
   circleOnlyControls: NodeListOf<HTMLElement>
   circlePresetOnlyControls: NodeListOf<HTMLElement>
-  circlePresetAddButton: HTMLButtonElement
+  addCircleButton: HTMLButtonElement
+  addRectangleButton: HTMLButtonElement
+  addCustomButton: HTMLButtonElement
+  addShapeHint: HTMLElement
   circlePresetRemoveButton: HTMLButtonElement
+  selectedShapeLabel: HTMLElement
+  noSelectionControls: NodeListOf<HTMLElement>
   circlePresetStrategySelect: HTMLSelectElement
   hasInstanceControls: NodeListOf<HTMLElement>
-  basicShapeTypeSelect: HTMLSelectElement
   basicShapeRectControls: NodeListOf<HTMLElement>
   basicShapeRectWidthSlider: HTMLInputElement
   basicShapeRectHeightSlider: HTMLInputElement
   basicShapeRectRadiusSlider: HTMLInputElement
+  customShapeControls: NodeListOf<HTMLElement>
+  customShapeScaleSlider: HTMLInputElement
+  customShapeRedrawButton: HTMLButtonElement
   iconOnlyControls: NodeListOf<HTMLElement>
   gridOnlyControls: NodeListOf<HTMLElement>
 }
@@ -124,15 +131,22 @@ export function getGlassControls(): GlassControls {
     surfaceButtons: document.querySelectorAll<HTMLButtonElement>('.surface-btn'),
     circleOnlyControls: document.querySelectorAll<HTMLElement>('.circle-only-control'),
     circlePresetOnlyControls: document.querySelectorAll<HTMLElement>('.circle-preset-only'),
-    circlePresetAddButton: getElement<HTMLButtonElement>('circlePresetAdd'),
+    addCircleButton: getElement<HTMLButtonElement>('addCircle'),
+    addRectangleButton: getElement<HTMLButtonElement>('addRectangle'),
+    addCustomButton: getElement<HTMLButtonElement>('addCustom'),
+    addShapeHint: getElement<HTMLElement>('addShapeHint'),
     circlePresetRemoveButton: getElement<HTMLButtonElement>('circlePresetRemove'),
+    selectedShapeLabel: getElement<HTMLElement>('selectedShapeLabel'),
+    noSelectionControls: document.querySelectorAll<HTMLElement>('.no-instance-control'),
     circlePresetStrategySelect: getElement<HTMLSelectElement>('circlePresetStrategy'),
     hasInstanceControls: document.querySelectorAll<HTMLElement>('.has-instance-control'),
-    basicShapeTypeSelect: getElement<HTMLSelectElement>('basicShapeType'),
     basicShapeRectControls: document.querySelectorAll<HTMLElement>('.basic-shape-rect-control'),
     basicShapeRectWidthSlider: getElement<HTMLInputElement>('basicShapeRectWidth'),
     basicShapeRectHeightSlider: getElement<HTMLInputElement>('basicShapeRectHeight'),
     basicShapeRectRadiusSlider: getElement<HTMLInputElement>('basicShapeRectRadius'),
+    customShapeControls: document.querySelectorAll<HTMLElement>('.custom-shape-control'),
+    customShapeScaleSlider: getElement<HTMLInputElement>('customShapeScale'),
+    customShapeRedrawButton: getElement<HTMLButtonElement>('customShapeRedraw'),
     iconOnlyControls: document.querySelectorAll<HTMLElement>('.icon-only-control'),
     gridOnlyControls: document.querySelectorAll<HTMLElement>('.grid-only-control'),
   }
@@ -146,24 +160,38 @@ export function setSliderValue(slider: HTMLInputElement, value: number): void {
   }
 }
 
+const OPEN_GROUPS_KEY = 'light-occultation:open-groups'
+
+function readOpenGroups(): string[] | null {
+  try {
+    const stored = localStorage.getItem(OPEN_GROUPS_KEY)
+    return stored ? JSON.parse(stored) : null
+  } catch {
+    return null
+  }
+}
+
+function writeOpenGroups(groups: string[]): void {
+  try {
+    localStorage.setItem(OPEN_GROUPS_KEY, JSON.stringify(groups))
+  } catch {
+    // Remembering open groups is a convenience, so a blocked write is fine.
+  }
+}
+
+/** Keeps each person's open control groups the same between visits. */
 export function setupCollapsibleSections(): void {
-  document.querySelectorAll<HTMLButtonElement>('.section-header').forEach((header) => {
-    header.addEventListener('click', () => {
-      const section = header.closest<HTMLElement>('.panel-section')
-      if (!section) return
+  const groups = document.querySelectorAll<HTMLDetailsElement>('details.control-group[data-group]')
+  const remembered = readOpenGroups()
 
-      const collapsed = section.classList.toggle('collapsed')
-      header.setAttribute('aria-expanded', String(!collapsed))
-    })
-  })
+  groups.forEach((group) => {
+    if (remembered) {
+      group.open = remembered.includes(group.dataset.group ?? '')
+    }
 
-  document.querySelectorAll<HTMLButtonElement>('.control-group-header').forEach((header) => {
-    header.addEventListener('click', () => {
-      const group = header.closest<HTMLElement>('.control-group')
-      if (!group) return
-
-      const collapsed = group.classList.toggle('collapsed')
-      header.setAttribute('aria-expanded', String(!collapsed))
+    group.addEventListener('toggle', () => {
+      const open = [...groups].filter((item) => item.open).map((item) => item.dataset.group ?? '')
+      writeOpenGroups(open)
     })
   })
 }

@@ -1,4 +1,4 @@
-import type { WebGPURenderer } from '../webgpu/renderer'
+import { MAX_CUSTOM_SCALE, MIN_CUSTOM_SCALE, type WebGPURenderer } from '../webgpu/renderer'
 import { setSliderValue } from './dom'
 import type { GlassSprings } from './springs'
 import type { UserParams } from './types'
@@ -221,8 +221,13 @@ export class GlassInteraction {
     const direction = event.deltaY > 0 ? -1 : 1
     const activeCircle = renderer.getActiveCircleInstance()
     const activeRect = renderer.getActiveRectangleInstance()
+    const activeCustom = renderer.getActiveCustomInstance()
 
-    if (activeRect) {
+    if (activeCustom) {
+      const scale = activeCustom.scale * (direction > 0 ? 1.06 : 1 / 1.06)
+      activeCustom.scale = Math.min(Math.max(scale, MIN_CUSTOM_SCALE), MAX_CUSTOM_SCALE)
+      this.options.syncSlidersFromActiveInstance()
+    } else if (activeRect) {
       const targetScale = direction > 0 ? 1.06 : 1 / 1.06
       const minDim = 48
       const maxDim = 760

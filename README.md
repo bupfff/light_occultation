@@ -1,38 +1,46 @@
-# Glass Effect WebGPU
+# Light Occultation
 
-A real-time liquid glass effect renderer built with WebGPU and HTML-in-Canvas. Features realistic refraction, specular highlights, progressive blur, live DOM backgrounds, and interactive liquid animations.
+Drag glass across a page and watch it bend what's behind it, or sketch a lens of your own. An occultation is one body passing in front of a light source, and every shape here does the same to the page: a real-time refraction renderer built on WebGPU.
 
-https://github.com/user-attachments/assets/781efc76-c91e-4f8a-b9f6-da7a2773e194
+[Live demo](https://bupfff.github.io/light_occultation/)
 
-[Live demo](https://jeantimex.github.io/glass-effect-webgpu/)
+Light Occultation started as a fork of [Glass Effect WebGPU](https://github.com/jeantimex/glass-effect-webgpu) by jeantimex, which provides the core glass renderer.
 
 ## Features
 
-- **Liquid Glass Effect**: Realistic glass refraction with customizable thickness and bezel
-- **Multiple Presets**: Circle, Rectangle, Switch, Slider, Split Menu, Player Controls
-- **Circle Preset Strategies**: Add multiple circles and choose between stacked composition or same-layer merging
-- **Interactive Animations**: Spring-based liquid deformation on press/drag
-- **Per-element Independence**: Each element in multi-item presets (Player Controls, Split Menu) animates independently
-- **Background Options**: Grid pattern, images, video, or live HTML content
-- **Customizable**: Extensive controls for refraction, blur, shadow, specular, and more
+- **Sketched shapes**: Choose Custom, draw any outline, and it becomes refractive glass. Extra strokes join on.
+- **Circles and rectangles**: Add up to 8 shapes in any mix, then drag, resize, and tune each one separately.
+- **Merging**: Set Overlap to Merge and neighboring shapes melt together, including sketched ones.
+- **Interactive animations**: Spring-based liquid deformation on press and drag.
+- **Backgrounds**: Title page, article, video, or a moving grid.
+- **Detailed controls**: Refraction, blur, shadow, highlights, tint, and icons.
+
+## Keyboard shortcuts
+
+| Key | Action |
+| --- | --- |
+| `S` | Sketch a new shape |
+| `Delete` | Remove the selected shape |
+| `Enter` | Finish a sketch |
+| `Ctrl/Cmd` + `Z` | Undo the last stroke |
+| `Esc` | Cancel a sketch |
 
 ## Technical Notes
 
 - **WebGPU shader pipeline**: The liquid glass surface is rendered in WGSL with refraction, blur, specular highlights, and shadowing controlled by a shared uniform buffer.
 - **Interactive deformation**: Press, drag, and release states drive spring-based liquid motion so the surface can squash, stretch, and settle naturally.
+- **Sketched shapes**: Each stroke is rasterized, converted to a signed distance field in `src/webgpu/custom-shape.ts`, and stored in a texture array that the shader samples in place of a formula.
 - **Template backgrounds**: Article, banner, CSS animation, and video backgrounds are all routed through the same renderer so they can be sampled consistently by the glass shader.
 - **HTML-in-Canvas path**: Live DOM backgrounds are copied into a texture with `copyElementImageToTexture()` when supported, with `html2canvas` used as a fallback.
 - **Preset-driven UI**: Each control preset updates the same glass parameters, which keeps the preview, sliders, and displacement map in sync.
 
-## Circle Preset Strategies
+## Overlap
 
-Circle Lens supports adding multiple circles and choosing how they are composed.
+Shapes can be composed in two ways, set by Overlap in the Scene group.
 
-- **Stack**: each new circle is rendered after the previous one, so later circles can use the earlier composed result as their background.
-- **Merge**: all circles share the same layer and are blended together with a smooth union.
-- **Per-circle interaction**: each circle can be dragged independently, and the active circle drives the liquid deformation while the others stay rigid.
-
-https://github.com/user-attachments/assets/522279bb-5a83-4dd1-95b4-32980417bbcf
+- **Stack**: each new shape is rendered after the previous one, so later shapes can use the earlier composed result as their background.
+- **Merge**: all shapes share the same layer and are blended together with a smooth union.
+- **Per-shape interaction**: each shape can be dragged independently, and the active shape drives the liquid deformation while the others stay rigid.
 
 ## HTML-in-Canvas Integration
 
@@ -61,7 +69,7 @@ The API is currently experimental. To enable:
 1. Open **Chrome Canary** or **Brave 147+**
 2. Navigate to `chrome://flags/#canvas-draw-element`
 3. Enable the flag and restart the browser
-4. Select "Article" background in the app
+4. Choose the Article background in the app
 5. Console will log: `"HTML-in-Canvas API supported - text selection will work in article mode"`
 
 ### Fallback Behavior
@@ -122,4 +130,4 @@ npm run build
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE). The original renderer is by jeantimex.

@@ -5,7 +5,7 @@ export interface GlassInstanceConfig {
   centerX: number
   centerY: number
 
-  // Shape type: 0 = circle, 1 = rect
+  // Shape type: 0 = circle, 1 = rect, 2 = custom
   shapeType: number
 
   // Surface & refraction
@@ -187,6 +187,9 @@ export abstract class GlassInstance {
   scaleX = 1.0
   scaleY = 1.0
   runtimeGlassBgOpacity: number | null = null
+
+  // Layer in the custom shape texture array, used by sketched shapes
+  customSdfLayer = 0
 
   constructor(
     device: GPUDevice,
@@ -419,7 +422,7 @@ export abstract class GlassInstance {
     data[i++] = this.pressedGlassBgOpacity
     data[i++] = this.specularThickness
     data[i++] = this.specularBlur
-    data[i++] = 0 // padding
+    data[i++] = this.customSdfLayer
 
     // Remaining padding to reach 64 floats
     while (i < GLASS_INSTANCE_FLOATS) {

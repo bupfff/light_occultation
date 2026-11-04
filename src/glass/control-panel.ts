@@ -1,5 +1,8 @@
 import type { SurfaceType } from './displacement-map'
-import type { BackgroundType, WebGPURenderer, GlassInstance, CircleInstance, RectangleInstance } from '../webgpu/renderer'
+import { CircleInstance, CustomInstance, MAX_GLASS_INSTANCES, RectangleInstance } from '../webgpu/renderer'
+import type { BackgroundType, WebGPURenderer, GlassInstance } from '../webgpu/renderer'
+import type { CustomShape } from '../webgpu/custom-shape'
+import type { SketchPurpose } from './sketch-mode'
 import type { GlassControls } from './dom'
 import { setSliderValue } from './dom'
 import { getPresetDefinition } from '../presets'
@@ -15,6 +18,13 @@ interface ControlPanelOptions {
   springs: GlassSprings
   setCurrentSurfaceType: (surfaceType: SurfaceType) => void
   updateDisplacementMap: () => void
+  openSketch: (purpose: SketchPurpose) => void
+}
+
+const DRAWER_QUERY = '(max-width: 1100px)'
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement
 }
 
 export class GlassControlPanel {
@@ -39,6 +49,10 @@ export class GlassControlPanel {
     }
   }
 
+  private getActiveCustomInstance(): CustomInstance | undefined {
+    return this.options.renderer.getActiveCustomInstance()
+  }
+
   private updateRectangleInstanceProperty(update: (instance: RectangleInstance) => void): void {
     const instance = this.getActiveRectangleInstance()
     if (instance) {
@@ -54,7 +68,7 @@ export class GlassControlPanel {
   async setup(): Promise<void> {
     const { controls, renderer } = this.options
 
-    const drawerQuery = window.matchMedia('(max-width: 1100px)')
+    const drawerQuery = window.matchMedia(DRAWER_QUERY)
     this.setPanelDrawerOpen(!drawerQuery.matches)
     drawerQuery.addEventListener('change', (event) => {
       this.setPanelDrawerOpen(!event.matches)
@@ -67,6 +81,7 @@ export class GlassControlPanel {
     this.updateChromaticControls()
     this.bindEvents()
     this.applyPreset()
+    this.syncSlidersFromActiveInstance()
     await renderer.setBackground(controls.backgroundTypeSelect.value as BackgroundType)
   }
 
@@ -108,7 +123,8 @@ export class GlassControlPanel {
     const { controls, userParams } = this.options
     const circleInstance = this.getActiveCircleInstance()
     const rectInstance = this.getActiveRectangleInstance()
-    const instance = circleInstance ?? rectInstance
+    const customInstance = this.getActiveCustomInstance()
+    const instance = this.getActiveInstance()
     if (!instance) return
 
     // Common properties
@@ -139,13 +155,13 @@ export class GlassControlPanel {
 
     // Shape-specific properties - only update sliders, not renderer.glassParams
     if (rectInstance) {
-      controls.basicShapeTypeSelect.value = 'rectangle'
       setSliderValue(controls.basicShapeRectWidthSlider, rectInstance.rectWidth)
       setSliderValue(controls.basicShapeRectHeightSlider, rectInstance.rectHeight)
       setSliderValue(controls.basicShapeRectRadiusSlider, rectInstance.rectRadius)
     } else if (circleInstance) {
-      controls.basicShapeTypeSelect.value = 'circle'
       setSliderValue(controls.circleSizeSlider, circleInstance.size)
+    } else if (customInstance) {
+      setSliderValue(controls.customShapeScaleSlider, customInstance.scale)
     }
 
     // Note: In basic-shape mode, visual properties come from per-instance storage buffer data.
@@ -228,7 +244,6 @@ export class GlassControlPanel {
     renderer.clearGlassInstances()
     renderer.addCirclePresetCircle()
     controls.circlePresetStrategySelect.value = 'stack'
-    controls.basicShapeTypeSelect.value = 'circle'
     setSliderValue(controls.circleSizeSlider, preset.circleSize)
 
     controls.surfaceButtons.forEach((button) => {
@@ -277,51 +292,16 @@ export class GlassControlPanel {
       if (controls.glassThemeSelect.value === 'system') this.updateGlassTheme()
     })
 
-    controls.circlePresetAddButton.addEventListener('click', () => {
-      const shapeType = controls.basicShapeTypeSelect.value as 'circle' | 'rectangle'
-      const index = renderer.addGlassInstance(shapeType)
-
-      // Apply slider values to the newly created instance
-      if (shapeType === 'circle') {
-        const circleInstance = renderer.getCirclePresetCircle(index)
-        if (circleInstance) {
-          const size = parseFloat(controls.circleSizeSlider.value)
-          circleInstance.size = size
-          renderer.setCirclePresetCircleSize(index, size)
-        }
-      } else {
-        const rectInstance = renderer.getRectanglePresetInstance(index)
-        if (rectInstance) {
-          rectInstance.rectWidth = parseFloat(controls.basicShapeRectWidthSlider.value)
-          rectInstance.rectHeight = parseFloat(controls.basicShapeRectHeightSlider.value)
-          rectInstance.rectRadius = parseFloat(controls.basicShapeRectRadiusSlider.value)
-        }
-      }
-      this.syncSlidersFromActiveInstance()
-      this.updateSelectedInstanceControls()
-      this.updateShapeControls()
-      this.updateIconControls()
+    controls.addCircleButton.addEventListener('click', () => this.addShape('circle'))
+    controls.addRectangleButton.addEventListener('click', () => this.addShape('rectangle'))
+    controls.addCustomButton.addEventListener('click', () => this.options.openSketch('add'))
+    controls.customShapeRedrawButton.addEventListener('click', () => this.options.openSketch('redraw'))
+    controls.customShapeScaleSlider.addEventListener('input', () => {
+      const value = parseFloat(controls.customShapeScaleSlider.value)
+      const customInstance = this.getActiveCustomInstance()
+      if (customInstance) customInstance.scale = value
     })
-    controls.circlePresetRemoveButton.addEventListener('click', () => {
-      const activeIndex = renderer.getCirclePresetActiveIndex()
-      const removed = renderer.removeGlassInstance(activeIndex)
-      if (removed) {
-        this.syncSlidersFromActiveInstance()
-        this.updateSelectedInstanceControls()
-        this.updateShapeControls()
-        this.updateIconControls()
-      }
-    })
-    controls.basicShapeTypeSelect.addEventListener('change', () => {
-      if (controls.basicShapeTypeSelect.value === 'rectangle') {
-        controls.iconTypeSelect.value = 'none'
-        renderer.glassParams.iconType = 0
-      }
-
-      // Update controls visibility based on selected shape type
-      this.updateShapeControlsForDropdown()
-      this.updateIconControls()
-    })
+    controls.circlePresetRemoveButton.addEventListener('click', () => this.removeActiveShape())
     controls.basicShapeRectWidthSlider.addEventListener('input', () => {
       const value = parseFloat(controls.basicShapeRectWidthSlider.value)
       this.updateRectangleInstanceProperty(rect => rect.rectWidth = value)
@@ -345,8 +325,17 @@ export class GlassControlPanel {
       this.setPanelDrawerOpen(false)
     })
     window.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && window.matchMedia(DRAWER_QUERY).matches) {
         this.setPanelDrawerOpen(false)
+        return
+      }
+
+      if (isTypingTarget(event.target) || event.ctrlKey || event.metaKey || event.altKey) return
+
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        this.removeActiveShape()
+      } else if (event.key.toLowerCase() === 's' && renderer.glassInstanceCount < MAX_GLASS_INSTANCES) {
+        this.options.openSketch('add')
       }
     })
 
@@ -595,28 +584,63 @@ export class GlassControlPanel {
     })
   }
 
-  private updateShapeControls(): void {
+  private addShape(shapeType: 'circle' | 'rectangle'): void {
     const { controls, renderer } = this.options
+    const index = renderer.addGlassInstance(shapeType)
 
-    const activeCircle = renderer.getActiveCircleInstance()
-    const activeRect = renderer.getActiveRectangleInstance()
-    const showCircleControls = !!activeCircle
-    const showBasicShapeRectControls = !!activeRect
+    // Apply slider values to the newly created instance
+    if (shapeType === 'circle') {
+      const circleInstance = renderer.getCirclePresetCircle(index)
+      if (circleInstance) {
+        const size = parseFloat(controls.circleSizeSlider.value)
+        circleInstance.size = size
+        renderer.setCirclePresetCircleSize(index, size)
+      }
+    } else {
+      const rectInstance = renderer.getRectanglePresetInstance(index)
+      if (rectInstance) {
+        rectInstance.rectWidth = parseFloat(controls.basicShapeRectWidthSlider.value)
+        rectInstance.rectHeight = parseFloat(controls.basicShapeRectHeightSlider.value)
+        rectInstance.rectRadius = parseFloat(controls.basicShapeRectRadiusSlider.value)
+      }
+    }
+    this.refreshForSelection()
+  }
+
+  /** Adds a finished sketch, or swaps it in for the selected custom shape. */
+  applySketch(shape: CustomShape, purpose: SketchPurpose): void {
+    const { renderer } = this.options
+    if (purpose === 'redraw') {
+      renderer.replaceActiveCustomShape(shape)
+    } else {
+      renderer.addCustomShape(shape)
+    }
+    this.refreshForSelection()
+  }
+
+  private removeActiveShape(): void {
+    const { renderer } = this.options
+    if (renderer.removeGlassInstance(renderer.getCirclePresetActiveIndex())) {
+      this.refreshForSelection()
+    }
+  }
+
+  private refreshForSelection(): void {
+    this.syncSlidersFromActiveInstance()
+    this.updateControlsVisibility()
+  }
+
+  private updateShapeControls(): void {
+    const { controls } = this.options
+
+    const showCircleControls = !!this.getActiveCircleInstance()
+    const showBasicShapeRectControls = !!this.getActiveRectangleInstance()
+    const showCustomControls = !!this.getActiveCustomInstance()
 
     controls.circleOnlyControls.forEach((control) => control.classList.toggle('hidden', !showCircleControls))
     controls.circlePresetOnlyControls.forEach((control) => control.classList.remove('hidden'))
     controls.basicShapeRectControls.forEach((control) => control.classList.toggle('hidden', !showBasicShapeRectControls))
-  }
-
-  private updateShapeControlsForDropdown(): void {
-    const { controls } = this.options
-
-    const selectedShape = controls.basicShapeTypeSelect.value
-    const isCircleSelected = selectedShape === 'circle'
-    const isRectSelected = selectedShape === 'rectangle'
-
-    controls.circleOnlyControls.forEach((control) => control.classList.toggle('hidden', !isCircleSelected))
-    controls.basicShapeRectControls.forEach((control) => control.classList.toggle('hidden', !isRectSelected))
+    controls.customShapeControls.forEach((control) => control.classList.toggle('hidden', !showCustomControls))
   }
 
   private updateIconControls(): void {
@@ -634,9 +658,23 @@ export class GlassControlPanel {
 
     // Hide controls when no instance is selected
     controls.hasInstanceControls.forEach((control) => control.classList.toggle('hidden', !hasSelectedInstance))
+    controls.noSelectionControls.forEach((control) => control.classList.toggle('hidden', hasSelectedInstance))
 
     // Disable remove button when no instance is selected
     controls.circlePresetRemoveButton.disabled = !hasSelectedInstance
+
+    const instance = this.getActiveInstance()
+    if (instance instanceof CircleInstance) controls.selectedShapeLabel.textContent = 'Circle'
+    else if (instance instanceof RectangleInstance) controls.selectedShapeLabel.textContent = 'Rectangle'
+    else if (instance instanceof CustomInstance) controls.selectedShapeLabel.textContent = 'Custom shape'
+
+    const canAdd = renderer.glassInstanceCount < MAX_GLASS_INSTANCES
+    controls.addCircleButton.disabled = !canAdd
+    controls.addRectangleButton.disabled = !canAdd
+    controls.addCustomButton.disabled = !canAdd
+    controls.addShapeHint.textContent = canAdd
+      ? 'Press S to sketch. Press Delete to remove the selected shape.'
+      : `Remove a shape to add another. The limit is ${MAX_GLASS_INSTANCES}.`
   }
 
   private updateBackgroundControls(): void {

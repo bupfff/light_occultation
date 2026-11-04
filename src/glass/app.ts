@@ -5,6 +5,7 @@ import { DisplacementMapView } from './displacement-view'
 import { getGlassControls, setupCollapsibleSections, setupSliderValueDisplays } from './dom'
 import { GlassInteraction } from './interaction'
 import { GlassRenderLoop } from './render-loop'
+import { SketchMode } from './sketch-mode'
 import { createGlassSprings } from './springs'
 import type { UserParams } from './types'
 
@@ -44,6 +45,13 @@ export class GlassApp {
         this.currentSurfaceType = surfaceType
       },
       updateDisplacementMap,
+      openSketch: (purpose) => sketchMode.open(purpose),
+    })
+
+    const sketchMode = new SketchMode({
+      onFinish: (shape, purpose) => controlPanel.applySketch(shape, purpose),
+      isDrawerLayout: () => window.matchMedia('(max-width: 1100px)').matches,
+      closeDrawer: () => controlPanel.setPanelDrawerOpen(false),
     })
 
     const interaction = new GlassInteraction({
